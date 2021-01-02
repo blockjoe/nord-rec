@@ -77,13 +77,22 @@ Get the result of Nord VPN's reccomended server utility.
 Usage: nord-rec [options]
 
 Options:
-  -c, --country <country-name|country-id>  Filter the reccomendations by country.
-  -g, --group <group-name|group-id>        Filter the reccomendations by group.
-  -t, --technology <tech-name|tech-id>     Filter the reccomendations by technology.
-  -n <n-results>                           Get n results.
-  --list-countries                         Display the availble countries and ids.
-  --list-groups                            Display the available server groups and ids.
-  --list-technologies                      Display the available technologies and ids.
-  -v, --verbose                            Display more information about the reccomended server(s).
-  -h, --help                               Display help message.
+  -c, --country <country-name|country-id>
+      Filter the reccomendations by country.
+  -g, --group <group-name|group-id>
+      Filter the reccomendations by group.
+  -t, --technology <tech-name|tech-id>
+      Filter the reccomendations by technology.
+  -n <n-results>
+      Get n results.
+  --list-countries
+      Display the availble countries and ids.
+  --list-groups
+      Display the available server groups and ids.
+  --list-technologies
+      Display the available technologies and ids.
+  -v, --verbose
+      Display more information about the reccomended server(s).
+  -h, --help
+      Display help message.
 ```
