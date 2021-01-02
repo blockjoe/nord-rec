@@ -1,0 +1,215 @@
+#!/bin/bash
+
+check_deps(){
+    MISSING=()
+    if ! [ -x "$(command -v curl)" ]; then
+        MISSING+=("curl")
+    fi
+    if ! [ -x "$(command -v jq)" ]; then
+        MISSING+=("jq")
+    fi
+    if ! [ -x "$(command -v column)" ]; then
+        MISSING+=("column")
+    fi
+}
+
+usage(){
+    echo "Get the result of Nord VPN's reccomended server utility."
+    echo
+    echo "Usage: nord-rec [options]"
+    echo
+    echo "Options:"
+    echo "  -c, --country <country-name|country-id>  Filter the reccomendations by country."
+    echo "  -g, --group <group-name|group-id>        Filter the reccomendations by group."
+    echo "  -t, --technology <tech-name|tech-id>     Filter the reccomendations by technology."
+    echo "  -n <n-results>                           Get n results."
+    echo "  --list-countries                         Display the availble countries and ids."
+    echo "  --list-groups                            Display the available server groups and ids."
+    echo "  --list-technologies                      Display the available technologies and ids."
+    echo "  -v, --verbose                            Display more information about the reccomended server(s)."
+    echo "  -h, --help                               Display help message."
+    
+}
+
+LIST_HEADER="id\tName\n"
+
+list_countries(){
+    curl --silent "https://api.nordvpn.com/v1/servers/countries" | jq --raw-output '.[] | [.id, .name] | @tsv' 
+}
+
+list_groups(){
+    curl --silent "https://api.nordvpn.com/v1/servers/groups" | jq --raw-output '.[] | . as $parent | .type  | [$parent.identifier, $parent.title] | @tsv' 
+}
+
+list_technologies(){
+    curl --silent "https://api.nordvpn.com/v1/technologies" | jq --raw-output '.[] | [.identifier, .name] | @tsv' 
+}
+
+country_code_lookup(){
+    #used as the url_param: "filters\[country_id\]=${COUNTRY_CODE}"
+    COUNTRY_CODE=$(list_countries | awk "/$1/" IGNORECASE=1 | cut -f1)
+}
+
+group_identifier_lookup(){
+    #used as the url_param: "filters\[servers_groups\]\[identifier\]=${GROUP_ID}"
+    GROUP_ID=$(list_groups | awk "/$1/" IGNORECASE=1 | cut -f1)
+}
+
+technology_identifier_lookup(){
+    #used as the url_param: "filters\servers_technologies\]\[identifier\]=${TECH_ID}"
+    TECH_ID=$(list_technologies | awk "/$1/" IGNORECASE=1 | cut -f1)
+}
+
+
+
+check_deps
+if [ -n "${MISSING}" ]; then
+    echo "Error: Missing the following dependencies: ${MISSING[*]}" >&2
+    exit 1
+fi
+
+PARAMS=""
+while (( "$#" )); do
+  case "$1" in
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    -c|--country)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        COUNTRY=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -g|--group)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        GROUP=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -t|--tech)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        TECH=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+
+    -n)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        COUNT=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --list-countries)
+      resp="$(list_countries)"
+      echo -e "${LIST_HEADER}${resp}" | column -t -s "	"
+      exit 0
+      ;;
+    --list-groups)
+      resp="$(list_groups)"
+      echo -e "${LIST_HEADER}${resp}" | column -t -s "	"
+      exit 0
+      ;;
+    --list-technologies)
+      resp="$(list_technologies)"
+      echo -e "${LIST_HEADER}${resp}" | column -t -s "	"
+      exit 0
+      ;;
+    -*|--*=) # unsupported flags
+      echo "Error: Unsupported flag $1" >&2
+      echo
+      usage
+      exit 1
+      ;;
+    *) # preserve positional arguments
+      echo "Error: Unsupported Parameter $1" >&2
+      echo
+      usage
+      exit
+      ;;
+  esac
+done
+
+FILTERS=()
+if ! [ -z ${COUNTRY+x} ]; then
+    country_code_lookup "$COUNTRY"
+    if [ -z "$COUNTRY_CODE" ]; then
+        echo "Error: ${COUNTRY} does not appear to be a supported country. See the --list-countries option." >&2
+        exit 1
+    fi
+    if [ $(echo "$COUNTRY_CODE" | wc -l) -gt 1 ]; then
+        echo "Error: The country name provided, '${COUNTRY}', matched multiple countries. See the --list-countries option to better clarify the desired country." >&2
+        exit 1
+    fi
+
+    FILTERS+=("filters\[country_id\]=${COUNTRY_CODE}")
+fi
+
+if ! [ -z ${GROUP+x} ]; then
+    group_identifier_lookup "$GROUP"
+    if [ -z "$GROUP_ID" ]; then
+      echo "Error: ${GROUP} does not appear to be a supported group. See the --list-groups option." >&2
+      exit 1
+    fi
+    if [ $(echo "$GROUP_ID" | wc -l) -gt 1 ]; then
+        echo -e "Error: The group name provided, '${GROUP}', matched multiple groups. Consider explicitly using the id of one of the following:\n${GROUP_ID}" >&2
+        exit 1
+    fi
+    FILTERS+=("filters\[servers_groups\]\[identifier\]=${GROUP_ID}")
+fi
+
+if ! [ -z ${TECH+x} ]; then
+    technology_identifier_lookup "$TECH"
+    if [ -z "$TECH_ID" ]; then
+      echo "Error: ${TECH} does not appear to be a supported technology. See the --list-technologies option." >&2
+      exit 1
+    fi
+    if [ "$TECH" == "openvpn_udp" ] || [ "$TECH" == "openvpn_tcp" ] || [ "$TECH" == "proxy" ] || [ "$TECH" == "proxy_ssl" ] || [ "$TECH" == "ikev2" ]; then
+        TECH_ID="$TECH"
+    elif [ $(echo "$TECH_ID" | wc -l) -gt 1 ]; then
+        echo -e "Error: The technology name provided, '${TECH}', matched multiple groups. Consider explicitly using the id of one of the following:\n${TECH_ID}" >&2
+        exit 1
+    fi
+    FILTERS+=("filters\[servers_technologies\]\[identifier\]={$TECH_ID}")
+fi
+
+if [ -z ${COUNT+x} ]; then
+    COUNT=1
+fi
+
+FILTERS+=("limit=${COUNT}")
+URL='https://api.nordvpn.com/v1/servers/recommendations'
+
+if [ -n "$FILTERS" ]; then
+    val=""
+    for filter in "${FILTERS[@]}"; do
+        val="${val}${filter}&"
+    done
+    URL="${URL}?${val}"
+fi
+
+
+if ! [ -z ${VERBOSE+x} ]; then
+    JQ_TAIL='| "      Server: \(.name)\n    Hostname: \(.hostname)\n    Location: \(.locations[0].country.name) - \(.locations[0].country.city.name)\n        Load: \(.load)\n     Created: \(.created_at)\n     Updated: \(.updated_at)\n      Region: \(.groups | map(select( .type.identifier == "regions") | .title) | join(", "))\n      Groups: \(.groups | map(select( .type.identifier == "legacy_group_category") | .title) | join(", "))\nTechnologies: ", "\(.technologies | map(select( .pivot.status == "online") | .name) | "              - \(.[])")",""'
+else
+    JQ_TAIL='.hostname'
+fi
+
+curl --silent $URL | jq --raw-output ".[]${JQ_TAIL}"
+
