@@ -4,9 +4,9 @@ A simple bash CLI to get the result of [NordVPN's reccomended server functionali
 
 ## Dependencies
 
-curl
-jq
-column
+- curl
+- jq
+- column
 
 ## Examples
 
